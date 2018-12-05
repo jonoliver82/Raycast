@@ -135,16 +135,16 @@ namespace GraphicsTest
                 double testY = _playerY;
                 int rayLength = 1;
                 int wallColour = 0;
-                do
+
+                while (wallColour == 0)
                 {
                     testX += xIncrement;
                     testY += yIncrement;
                     rayLength++;
                     int worldX = (int)(testX / WORLD_BLOCK_SIZE);
                     int worldY = (int)(testY / WORLD_BLOCK_SIZE);
-                    wallColour = world[worldX,worldY];
+                    wallColour = world[worldX, worldY];
                 }
-                while (!(wallColour > 0));
 
                 //Set start x for the rectangles
                 int x = (int)(((rayAngleDegrees - _playerFacingDegrees) * DRAW_LINE_WIDTH) / ANGLE_INCREMENT_DEGREES);
@@ -172,6 +172,7 @@ namespace GraphicsTest
         private void DrawCeiling(Graphics g, int x, int halfWallHeight)
         {
             Rectangle ceilingRect = new Rectangle(x, 0, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
+
             g.DrawRectangle(_ceilingPen, ceilingRect);
             g.FillRectangle(_ceilingPen.Brush, ceilingRect);
         }
@@ -180,11 +181,9 @@ namespace GraphicsTest
         {
             Rectangle wallRect = new Rectangle(x, SCREEN_CENTER_Y - halfWallHeight, DRAW_LINE_WIDTH, halfWallHeight * 2);
 
-            //Set up the brushes for the fill
             SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + KNOWN_COLOR_OFFSET));
-
-            //Set up the pens for the draw
             Pen wallPen = new Pen(wallBrush);
+
             g.DrawRectangle(wallPen, wallRect);
             g.FillRectangle(wallBrush, wallRect);
         }
@@ -192,6 +191,7 @@ namespace GraphicsTest
         private void DrawFloor(Graphics g, int x, int halfWallHeight)
         {
             Rectangle floorRect = new Rectangle(x, SCREEN_CENTER_Y + halfWallHeight, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
+
             g.DrawRectangle(_floorPen, floorRect);
             g.FillRectangle(_floorPen.Brush, floorRect);
         }
