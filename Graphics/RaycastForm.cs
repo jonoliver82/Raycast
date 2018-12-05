@@ -36,8 +36,8 @@ namespace GraphicsTest
         private double _playerY = PLAYER_START_Y;
         private double _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
 
-        private Pen _floorPen = new Pen(new SolidBrush(Color.Gray));
-        private Pen _ceilingPen = new Pen(new SolidBrush(Color.Black));
+        private Pen _floorPen = new Pen(new SolidBrush(Color.Gray), 1);
+        private Pen _ceilingPen = new Pen(new SolidBrush(Color.Black), 1);
 
         // TODO precalculate COS and SIN Tables for 0...360 degrees in radians
 
@@ -162,27 +162,38 @@ namespace GraphicsTest
                     wallHeight = SCREEN_HEIGHT;
                 }
                 int halfWallHeight = wallHeight / 2;
-
-                // TODO replace with lines?
-                //Set up the rectangles
-                Rectangle ceilingRect = new Rectangle(x, 0, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
-                Rectangle floorRect = new Rectangle(x, SCREEN_CENTER_Y + halfWallHeight, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
-                Rectangle wallRect = new Rectangle(x, SCREEN_CENTER_Y - halfWallHeight, DRAW_LINE_WIDTH, wallHeight);
-
-                //Set up the brushes for the fill
-                SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + KNOWN_COLOR_OFFSET));
-
-                //Set up the pens for the draw
-                Pen wallPen = new Pen(wallBrush);                             
-
-                //We need to draw and fill because fill does not draw the outline of the rectangle
-                g.DrawRectangle(_ceilingPen, ceilingRect);
-                g.FillRectangle(_ceilingPen.Brush, ceilingRect);
-                g.DrawRectangle(_floorPen, floorRect);
-                g.FillRectangle(_floorPen.Brush, floorRect);
-                g.DrawRectangle(wallPen, wallRect);
-                g.FillRectangle(wallBrush, wallRect);
+                
+                DrawCeiling(g, x, halfWallHeight);
+                DrawWall(g, x, halfWallHeight, wallColour);
+                DrawFloor(g, x, halfWallHeight);
             }
+        }
+
+        private void DrawCeiling(Graphics g, int x, int halfWallHeight)
+        {
+            Rectangle ceilingRect = new Rectangle(x, 0, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
+            g.DrawRectangle(_ceilingPen, ceilingRect);
+            g.FillRectangle(_ceilingPen.Brush, ceilingRect);
+        }
+
+        private void DrawWall(Graphics g, int x, int halfWallHeight, int wallColour)
+        {
+            Rectangle wallRect = new Rectangle(x, SCREEN_CENTER_Y - halfWallHeight, DRAW_LINE_WIDTH, halfWallHeight * 2);
+
+            //Set up the brushes for the fill
+            SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + KNOWN_COLOR_OFFSET));
+
+            //Set up the pens for the draw
+            Pen wallPen = new Pen(wallBrush);
+            g.DrawRectangle(wallPen, wallRect);
+            g.FillRectangle(wallBrush, wallRect);
+        }
+
+        private void DrawFloor(Graphics g, int x, int halfWallHeight)
+        {
+            Rectangle floorRect = new Rectangle(x, SCREEN_CENTER_Y + halfWallHeight, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
+            g.DrawRectangle(_floorPen, floorRect);
+            g.FillRectangle(_floorPen.Brush, floorRect);
         }
 
         private void DrawInfo()
