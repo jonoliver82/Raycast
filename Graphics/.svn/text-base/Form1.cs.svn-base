@@ -1,0 +1,270 @@
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+
+namespace GraphicsTest
+{
+    public partial class Form1 : Form
+    {
+        private Bitmap _backBuffer;
+
+        private double playerX = 35;
+        private double playerY = 35;
+        private float facing = 60;
+        private double step = 1.0;
+        private int fieldOfView = 60;
+        private int halfFieldOfView;
+        private int lineWidth = 5;
+        private int screenWidth = 300;
+        private int screenHeight = 200;
+        private int blockSize = 10;
+        private float turnDegrees = 3;
+
+        private int wallMidPoint;
+        private double angleIncrement;
+
+        //Each block is 10 x 10, so there are 100x100 for the whole map
+        //Player x,y of 15,15 is 1.5,1.5 in the world
+        //To convert player co-ordinate to world co-ordinate, divide by 10
+        //To convert world co-ordinate to player co-ordinate, multiply by 10
+        int[,] world = new int[10, 10]
+        {
+            {1,9,1,9,1,9,1,9,1,9},
+            {9,0,0,0,0,0,0,0,0,1},
+            {1,0,2,0,0,0,0,0,0,9},
+            {9,0,0,0,0,0,8,0,0,1},
+            {1,0,0,0,0,0,0,0,0,9},
+            {9,0,0,0,0,0,0,0,0,1},
+            {1,0,0,0,0,0,0,0,0,9},
+            {9,0,0,0,0,0,0,0,0,1},
+            {1,0,0,0,0,0,0,0,0,9},
+            {9,1,9,1,9,1,9,1,9,1}        
+        };
+                             
+        public Form1()
+        {
+            InitializeComponent();
+
+            _backBuffer = new Bitmap(screenWidth, screenHeight);
+
+            //Math.Tan works in radians
+            //To convert angle to radians, multiply by Math.PI/180
+            angleIncrement = fieldOfView / screenWidth;
+            wallMidPoint = screenHeight / 2;
+            halfFieldOfView = fieldOfView / 2;
+        }
+
+        /// <summary>
+        /// Don't allow the background to paint
+        /// </summary>
+        /// <param name="e"></param>
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {            
+        }
+
+        /// <summary>
+        /// Called everytime we invalidate the control
+        /// Render the scene based on the current position
+        /// </summary>
+        /// <param name="e"></param>
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = Graphics.FromImage(_backBuffer);
+            g.Clear(Color.White);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Raycast(g);
+
+            DrawMap(g);
+
+            g.Dispose();
+            e.Graphics.DrawImageUnscaled(_backBuffer, 0, 0);
+
+            infoLabel.Text = string.Format("Player X: {0} Y: {1} World X: {2} Y: {3} Facing: {4}", 
+                playerX.ToString("#0.00"), 
+                playerY.ToString("#0.00"), 
+                (int)playerX / blockSize,
+                (int)playerY / blockSize,
+                facing.ToString("#0.00"));
+        }
+
+        /// <summary>
+        /// Draws a map at the top left corner of the screen
+        /// </summary>
+        /// <param name="g"></param>
+        private void DrawMap(Graphics g)
+        {
+            Bitmap map = new Bitmap(20, 20);
+            Color pixelColor;
+
+            for (int y = 0; y < 10; y++)
+            {
+                for (int x = 0; x < 10; x++)
+                {
+                    //If floor, set to match floor color
+                    if (world[y, x] == 0)
+                    {
+                        pixelColor = Color.Gray;
+                    }
+                    else
+                    {
+                        pixelColor = Color.FromKnownColor((KnownColor)world[y, x] + 30);
+                    }
+                    
+                    //Set 2x2 pixels rather than 1x1 to increase size
+                    map.SetPixel(x * 2, y * 2, pixelColor );
+                    map.SetPixel(x * 2 + 1, y * 2, pixelColor);
+                    map.SetPixel(x * 2, y * 2 + 1 , pixelColor);
+                    map.SetPixel(x * 2 + 1, y * 2+ 1, pixelColor);
+                }
+            }
+
+            //Mark the player position
+            int xx = (int)(playerX / blockSize) * 2;
+            int yy = (int)(playerY / blockSize) * 2;
+            map.SetPixel(xx, yy, Color.Red);
+            map.SetPixel(xx + 1, yy, Color.Red);
+            map.SetPixel(xx, yy + 1, Color.Red);
+            map.SetPixel(xx + 1, yy + 1, Color.Red);
+
+            //Scale it up to 40 by 40 to make it easier to see
+            g.DrawImage(map,new Rectangle(0,0,40,40));
+        }
+
+        private void Raycast(Graphics g)
+        {
+            //As we are drawing lines of 5 pixels wide, our angle increment is 1
+            //If the lines where 1 pixel wide they would be 60/300 ie 0.2degrees
+            float angleIncrement = ((float)fieldOfView / (float)screenWidth) * (float)lineWidth;
+
+            //As we loop from rayAngle to rayAngle plus FoV, we are "looking right"
+            for (float rayAngle = facing; rayAngle <= facing + fieldOfView; rayAngle += angleIncrement)
+            {
+                //double xIncrement = Math.Sin((rayAngle % 360) * (Math.PI / 180)) / 100;
+                //double yIncrement = Math.Cos((rayAngle % 360) * (Math.PI / 180)) / 100;
+                double xIncrement = Math.Cos((rayAngle % 360) * (Math.PI / 180)) / 100;
+                double yIncrement = Math.Sin((rayAngle % 360) * (Math.PI / 180)) / 100;
+                double testX = playerX;
+                double testY = playerY;
+                int rayLength = 0;
+                int wallColour = 0;
+                do
+                {
+                    testX += xIncrement;
+                    testY += yIncrement;
+                    rayLength++;
+                    int worldX = (int)testX / blockSize;
+                    int worldY = (int)testY / blockSize;
+                    wallColour = world[worldX,worldY];
+                }
+                while (!(wallColour > 0));
+
+                //Set start x for the rectangle
+                int x = (int)(((rayAngle - facing) * lineWidth) / angleIncrement);
+
+                //Scale the wall according to distance
+                //If the rayLength is shorter, then the wall must be drawn bigger
+                int wallHeight = (100000 /rayLength) * 4;      
+                
+                //Compensate for fisheye view as ray is cast from center, so apply a reduction of 
+                //half FoV to account for our main loop doing 0...60
+                double beta = rayAngle - facing - halfFieldOfView;
+                wallHeight = (int)((double)wallHeight * Math.Cos(beta * (Math.PI / 180)));
+
+                int halfWallHeight = wallHeight / 2;
+
+                //Set up the rectangles
+                Rectangle ceilingRect = new Rectangle(x, 0, lineWidth, 100 - halfWallHeight);
+                Rectangle floorRect = new Rectangle(x, 100 + halfWallHeight, lineWidth, 100 - halfWallHeight);
+                Rectangle wallRect = new Rectangle(x, 100 - halfWallHeight, lineWidth, wallHeight);
+
+                //Set up the brushes for the fill
+                SolidBrush ceilingBrush = new SolidBrush(Color.Black);
+                SolidBrush floorBrush = new SolidBrush(Color.Gray);
+                SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + 30));
+
+                //Set up the pens for the draw
+                Pen ceilingPen = new Pen(ceilingBrush);
+                Pen floorPen = new Pen(floorBrush);
+                Pen wallPen = new Pen(wallBrush);                             
+
+                //We need to draw and fill because fill does not draw the outline of the rectangle
+                g.DrawRectangle(ceilingPen, ceilingRect);
+                g.FillRectangle(ceilingBrush, ceilingRect);
+                g.DrawRectangle(floorPen, floorRect);
+                g.FillRectangle(floorBrush, floorRect);
+                g.DrawRectangle(wallPen, wallRect);
+                g.FillRectangle(wallBrush, wallRect);
+            }
+        }
+
+        /// <summary>
+        /// Periodically invalidate the control so we get a paint message
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void paintTimer_Tick(object sender, EventArgs e)
+        {
+            Invalidate();
+        }
+
+        private void Form1_KeyDown(object sender, KeyEventArgs e)
+        {
+            switch (e.KeyCode)
+            {
+                case Keys.Right:
+                    {
+                        facing = (facing + turnDegrees) % 360;
+                        break;
+                    }
+                case Keys.Left:
+                    {
+                        facing = (facing + (360 - turnDegrees)) % 360;
+                        break;
+                    }
+                case Keys.Up:
+                    {
+                        double newPlayerX = playerX + Math.Cos(facing * (Math.PI / 180)) * step;
+                        double newPlayerY = playerY + Math.Sin(facing * (Math.PI / 180)) * step;
+                        //Check new position is not in a wall
+                        if (world[(int)newPlayerX / blockSize, (int)newPlayerY / blockSize] == 0)
+                        {
+                            playerX = newPlayerX;
+                            playerY = newPlayerY;
+                        }
+                        break;
+                    }
+                case Keys.Down:
+                    {
+                        double newPlayerX = playerX - Math.Cos(facing * (Math.PI / 180)) * step;
+                        double newPlayerY = playerY - Math.Sin(facing * (Math.PI / 180)) * step;
+                        //Check new position is not in a wall
+                        if (world[(int)newPlayerX / blockSize, (int)newPlayerY / blockSize] == 0)
+                        {
+                            playerX = newPlayerX;
+                            playerY = newPlayerY;
+                        }
+                        break;
+                    }
+                case Keys.R:
+                    {
+                        //Reset to start positions and angle
+                        facing = 0;
+                        playerX = 35;
+                        playerY = 35;
+                        break;
+                    }
+                default:
+                    {
+                        break;
+                    }
+            }
+        }
+    }
+}
