@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 namespace GraphicsTest
 {
-    public partial class Form1 : Form
+    public partial class RaycastForm : Form
     {
         // radians = degress * PI/180
         private const int WORLD_BLOCK_SIZE = 10;
@@ -14,10 +14,10 @@ namespace GraphicsTest
         private const double RADIANS_CONVERSION_FACTOR = Math.PI / 180.0;
         private const double PLAYER_START_X = 3.5 * WORLD_BLOCK_SIZE;
         private const double PLAYER_START_Y = 3.5 * WORLD_BLOCK_SIZE;
-        private const float PLAYER_START_ANGLE_DEGREES = 90;
+        private const double PLAYER_START_ANGLE_DEGREES = 90;
         private const int FIELD_OF_VIEW_DEGREES = 60;
         private const double PLAYER_STEP_AMOUNT = 2.0;
-        private const float PLAYER_ROTATE_DEGREES_AMOUNT = 5;
+        private const double PLAYER_ROTATE_DEGREES_AMOUNT = 5;
         private const int KNOWN_COLOR_OFFSET = 30;
         private const int SCREEN_WIDTH = 300;
         private const int SCREEN_HEIGHT = 200;
@@ -30,11 +30,11 @@ namespace GraphicsTest
 
         //As we are drawing lines of 5 pixels wide, our angle increment is 1
         //If the lines where 1 pixel wide they would be 60/300 ie 0.2degrees
-        private const float ANGLE_INCREMENT_DEGREES = ((float)FIELD_OF_VIEW_DEGREES / (float)SCREEN_WIDTH) * (float)DRAW_LINE_WIDTH;
+        private const double ANGLE_INCREMENT_DEGREES = ((double)FIELD_OF_VIEW_DEGREES / (double)SCREEN_WIDTH) * (double)DRAW_LINE_WIDTH;
 
         private double _playerX = PLAYER_START_X;
         private double _playerY = PLAYER_START_Y;
-        private float _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
+        private double _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
 
         private Pen _floorPen = new Pen(new SolidBrush(Color.Gray));
         private Pen _ceilingPen = new Pen(new SolidBrush(Color.Black));
@@ -59,7 +59,7 @@ namespace GraphicsTest
             {9,1,9,1,9,1,9,1,9,1},        
         };
                              
-        public Form1()
+        public RaycastForm()
         {
             InitializeComponent();
         }
@@ -76,11 +76,15 @@ namespace GraphicsTest
         /// <param name="e"></param>
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(Color.White);
-
+            ClearBackground(e.Graphics);
             Raycast(e.Graphics);
             DrawMap(e.Graphics);
             DrawInfo();
+        }
+
+        private void ClearBackground(Graphics g)
+        {
+            g.Clear(Color.White);
         }
 
         /// <summary>
@@ -123,7 +127,7 @@ namespace GraphicsTest
         private void Raycast(Graphics g)
         {
             //As we loop from rayAngle to rayAngle plus FoV, we are "looking right"
-            for (float rayAngleDegrees = _playerFacingDegrees; rayAngleDegrees <= _playerFacingDegrees + FIELD_OF_VIEW_DEGREES; rayAngleDegrees += ANGLE_INCREMENT_DEGREES)
+            for (double rayAngleDegrees = _playerFacingDegrees; rayAngleDegrees <= _playerFacingDegrees + FIELD_OF_VIEW_DEGREES; rayAngleDegrees += ANGLE_INCREMENT_DEGREES)
             {
                 double xIncrement = Math.Cos((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
                 double yIncrement = Math.Sin((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
@@ -142,23 +146,24 @@ namespace GraphicsTest
                 }
                 while (!(wallColour > 0));
 
-                //Set start x for the rectangle
+                //Set start x for the rectangles
                 int x = (int)(((rayAngleDegrees - _playerFacingDegrees) * DRAW_LINE_WIDTH) / ANGLE_INCREMENT_DEGREES);
 
                 //Compensate for fisheye view as ray is cast from center, so apply a reduction of 
-                //half FoV to account for our main loop doing 0...60
+                //half FoV to account for our main loop doing 0...60. Produces values -30 to 30
                 double beta = rayAngleDegrees - _playerFacingDegrees - HALF_FIELD_OF_VIEW_DEGREES;
                 rayLength = (int)((double)rayLength * Math.Cos(beta * RADIANS_CONVERSION_FACTOR));
 
                 //Scale the wall according to distance
                 //If the rayLength is shorter, then the wall must be drawn bigger
-                int wallHeight = (100000 /rayLength) * 4;   
+                int wallHeight = (int)(((double)100000 /(double)rayLength) * 4);   
                 if (wallHeight > SCREEN_HEIGHT)
                 {
                     wallHeight = SCREEN_HEIGHT;
-                }              
+                }
                 int halfWallHeight = wallHeight / 2;
 
+                // TODO replace with lines?
                 //Set up the rectangles
                 Rectangle ceilingRect = new Rectangle(x, 0, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
                 Rectangle floorRect = new Rectangle(x, SCREEN_CENTER_Y + halfWallHeight, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
@@ -200,6 +205,12 @@ namespace GraphicsTest
             Invalidate();
         }
 
+        /// <summary>
+        /// Move the player
+        /// See https://permadi.com/1996/05/ray-casting-tutorial-15/
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Form1_KeyDown(object sender, KeyEventArgs e)
         {
             switch (e.KeyCode)
@@ -221,13 +232,7 @@ namespace GraphicsTest
                     {
                         double newPlayerX = _playerX + (Math.Cos(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
                         double newPlayerY = _playerY + (Math.Sin(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
-
-                        //Check new position is not in a wall
-                        if (world[(int)(newPlayerX / WORLD_BLOCK_SIZE), (int)(newPlayerY / WORLD_BLOCK_SIZE)] == 0)
-                        {
-                            _playerX = newPlayerX;
-                            _playerY = newPlayerY;
-                        }
+                        TryUpdatePlayerPosition(newPlayerX, newPlayerY);
                         break;
                     }
                 case Keys.S:
@@ -235,13 +240,7 @@ namespace GraphicsTest
                     {
                         double newPlayerX = _playerX - (Math.Cos(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
                         double newPlayerY = _playerY - (Math.Sin(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
-
-                        //Check new position is not in a wall
-                        if (world[(int)(newPlayerX / WORLD_BLOCK_SIZE), (int)(newPlayerY / WORLD_BLOCK_SIZE)] == 0)
-                        {
-                            _playerX = newPlayerX;
-                            _playerY = newPlayerY;
-                        }
+                        TryUpdatePlayerPosition(newPlayerX, newPlayerY);
                         break;
                     }
                 case Keys.R:
@@ -259,6 +258,18 @@ namespace GraphicsTest
             }
         }
 
-
+        /// <summary>
+        /// Check new position is not in a wall, if so then update player position
+        /// </summary>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        private void TryUpdatePlayerPosition(double x, double y)
+        {
+            if (world[(int)(x / WORLD_BLOCK_SIZE), (int)(y / WORLD_BLOCK_SIZE)] == 0)
+            {
+                _playerX = x;
+                _playerY = y;
+            }
+        }
     }
 }

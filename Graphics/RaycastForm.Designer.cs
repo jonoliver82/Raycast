@@ -1,6 +1,6 @@
 ﻿namespace GraphicsTest
 {
-    partial class Form1
+    partial class RaycastForm
     {
         /// <summary>
         /// Required designer variable.
@@ -48,14 +48,17 @@
             this.infoLabel.TabIndex = 0;
             this.infoLabel.Text = "label1";
             // 
-            // Form1
+            // RaycastForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(292, 241);
             this.Controls.Add(this.infoLabel);
-            this.Name = "Form1";
-            this.Text = "Form1";
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.Name = "RaycastForm";
+            this.SizeGripStyle = System.Windows.Forms.SizeGripStyle.Hide;
+            this.Text = "Raycast";
             this.Load += new System.EventHandler(this.Form1_Load);
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.Form1_KeyDown);
             this.ResumeLayout(false);
