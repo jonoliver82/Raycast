@@ -28,16 +28,8 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.components = new System.ComponentModel.Container();
-            this.paintTimer = new System.Windows.Forms.Timer(this.components);
             this.infoLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
-            // 
-            // paintTimer
-            // 
-            this.paintTimer.Enabled = true;
-            this.paintTimer.Interval = 16;
-            this.paintTimer.Tick += new System.EventHandler(this.paintTimer_Tick);
             // 
             // infoLabel
             // 
@@ -54,6 +46,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(292, 241);
             this.Controls.Add(this.infoLabel);
+            this.KeyPreview = true;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.Name = "RaycastForm";
@@ -67,8 +60,6 @@
         }
 
         #endregion
-
-        private System.Windows.Forms.Timer paintTimer;
         private System.Windows.Forms.Label infoLabel;
     }
 }

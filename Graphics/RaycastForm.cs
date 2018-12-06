@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using System.Windows.Input;
 
 namespace GraphicsTest
 {
@@ -14,10 +15,10 @@ namespace GraphicsTest
         private const double RADIANS_CONVERSION_FACTOR = Math.PI / 180.0;
         private const double PLAYER_START_X = 3.5 * WORLD_BLOCK_SIZE;
         private const double PLAYER_START_Y = 3.5 * WORLD_BLOCK_SIZE;
-        private const double PLAYER_START_ANGLE_DEGREES = 90;
+        private const int PLAYER_START_ANGLE_DEGREES = 90;
         private const int FIELD_OF_VIEW_DEGREES = 60;
         private const double PLAYER_STEP_AMOUNT = 2.0;
-        private const double PLAYER_ROTATE_DEGREES_AMOUNT = 5;
+        private const int PLAYER_ROTATE_DEGREES_AMOUNT = 5;
         private const int KNOWN_COLOR_OFFSET = 30;
         private const int SCREEN_WIDTH = 300;
         private const int SCREEN_HEIGHT = 200;
@@ -34,10 +35,13 @@ namespace GraphicsTest
 
         private double _playerX = PLAYER_START_X;
         private double _playerY = PLAYER_START_Y;
-        private double _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
+        private int _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
 
         private Pen _floorPen = new Pen(new SolidBrush(Color.Gray), 1);
         private Pen _ceilingPen = new Pen(new SolidBrush(Color.Black), 1);
+
+        private double[] _cosTable = new double[360];
+        private double[] _sinTable = new double[360];
 
         // TODO precalculate COS and SIN Tables for 0...360 degrees in radians
 
@@ -62,11 +66,24 @@ namespace GraphicsTest
         public RaycastForm()
         {
             InitializeComponent();
+
+            // Initialize lookup tables
+            for (int i = 0; i < 360; i++)
+            {
+                _cosTable[i] = Math.Cos(i * RADIANS_CONVERSION_FACTOR);
+                _sinTable[i] = Math.Sin(i * RADIANS_CONVERSION_FACTOR);
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             DoubleBuffered = true;
+            Application.Idle += Application_Idle;
+        }
+
+        private void Application_Idle(object sender, EventArgs e)
+        {
+            Invalidate();
         }
 
         /// <summary>
@@ -129,8 +146,8 @@ namespace GraphicsTest
             //As we loop from rayAngle to rayAngle plus FoV, we are "looking right"
             for (double rayAngleDegrees = _playerFacingDegrees; rayAngleDegrees <= _playerFacingDegrees + FIELD_OF_VIEW_DEGREES; rayAngleDegrees += ANGLE_INCREMENT_DEGREES)
             {
-                double xIncrement = Math.Cos((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
-                double yIncrement = Math.Sin((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
+                double xIncrement = _cosTable[(int)(rayAngleDegrees % 360)] / 100; ////  Math.Cos((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
+                double yIncrement = _sinTable[(int)(rayAngleDegrees % 360)] / 100; //// Math.Sin((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
                 double testX = _playerX;
                 double testY = _playerY;
                 int rayLength = 1;
@@ -152,6 +169,7 @@ namespace GraphicsTest
                 //Compensate for fisheye view as ray is cast from center, so apply a reduction of 
                 //half FoV to account for our main loop doing 0...60. Produces values -30 to 30
                 double beta = rayAngleDegrees - _playerFacingDegrees - HALF_FIELD_OF_VIEW_DEGREES;
+                // Cant use Cos Table here as using non integer range of values
                 rayLength = (int)((double)rayLength * Math.Cos(beta * RADIANS_CONVERSION_FACTOR));
 
                 //Scale the wall according to distance
@@ -207,16 +225,6 @@ namespace GraphicsTest
         }
 
         /// <summary>
-        /// Periodically invalidate the control so we get a paint message
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void paintTimer_Tick(object sender, EventArgs e)
-        {
-            Invalidate();
-        }
-
-        /// <summary>
         /// Move the player
         /// See https://permadi.com/1996/05/ray-casting-tutorial-15/
         /// </summary>
@@ -241,16 +249,16 @@ namespace GraphicsTest
                 case Keys.W:
                 case Keys.Up:
                     {
-                        double newPlayerX = _playerX + (Math.Cos(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
-                        double newPlayerY = _playerY + (Math.Sin(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
+                        double newPlayerX = _playerX + (_cosTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
+                        double newPlayerY = _playerY + (_sinTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
                         TryUpdatePlayerPosition(newPlayerX, newPlayerY);
                         break;
                     }
                 case Keys.S:
                 case Keys.Down:
                     {
-                        double newPlayerX = _playerX - (Math.Cos(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
-                        double newPlayerY = _playerY - (Math.Sin(_playerFacingDegrees * RADIANS_CONVERSION_FACTOR) * PLAYER_STEP_AMOUNT);
+                        double newPlayerX = _playerX - (_cosTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
+                        double newPlayerY = _playerY - (_sinTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
                         TryUpdatePlayerPosition(newPlayerX, newPlayerY);
                         break;
                     }
