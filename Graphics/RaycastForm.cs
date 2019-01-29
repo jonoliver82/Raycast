@@ -53,13 +53,13 @@ namespace GraphicsTest
         {
             {1,9,1,9,1,9,1,9,1,9},
             {9,0,0,0,0,0,0,0,0,1},
-            {9,0,0,0,0,0,0,0,0,9},
-            {9,0,0,0,0,0,0,0,0,1},
-            {9,0,0,0,0,0,0,0,0,9},
-            {9,0,0,0,0,0,0,0,0,1},
-            {9,0,0,0,0,0,0,0,0,9},
-            {9,0,0,0,0,0,0,0,0,1},
-            {9,0,0,0,0,0,0,0,0,9},
+            {1,0,0,0,0,0,0,4,0,9},
+            {9,0,1,0,0,0,5,0,0,1},
+            {1,0,2,0,0,4,0,0,0,9},
+            {9,0,3,0,0,0,0,0,0,1},
+            {1,0,0,0,0,7,8,0,0,9},
+            {9,0,5,0,0,8,7,0,0,1},
+            {1,0,6,0,0,0,0,0,0,9},
             {9,1,9,1,9,1,9,1,9,1},        
         };
                              
@@ -142,12 +142,13 @@ namespace GraphicsTest
         }
 
         private void Raycast(Graphics g)
-        {
+        {            
             //As we loop from rayAngle to rayAngle plus FoV, we are "looking right"
             for (double rayAngleDegrees = _playerFacingDegrees; rayAngleDegrees <= _playerFacingDegrees + FIELD_OF_VIEW_DEGREES; rayAngleDegrees += ANGLE_INCREMENT_DEGREES)
             {
                 double xIncrement = _cosTable[(int)(rayAngleDegrees % 360)] / 100; ////  Math.Cos((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
                 double yIncrement = _sinTable[(int)(rayAngleDegrees % 360)] / 100; //// Math.Sin((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
+
                 double testX = _playerX;
                 double testY = _playerY;
                 int rayLength = 1;
@@ -158,6 +159,7 @@ namespace GraphicsTest
                     testX += xIncrement;
                     testY += yIncrement;
                     rayLength++;
+                    // Note conversion to int rounds down
                     int worldX = (int)(testX / WORLD_BLOCK_SIZE);
                     int worldY = (int)(testY / WORLD_BLOCK_SIZE);
                     wallColour = world[worldX, worldY];
@@ -174,7 +176,7 @@ namespace GraphicsTest
 
                 //Scale the wall according to distance
                 //If the rayLength is shorter, then the wall must be drawn bigger
-                int wallHeight = (int)(((double)100000 /(double)rayLength) * 4);   
+                int wallHeight = (int)(((double)100000 / (double)rayLength) * 4);   
                 if (wallHeight > SCREEN_HEIGHT)
                 {
                     wallHeight = SCREEN_HEIGHT;
@@ -198,7 +200,7 @@ namespace GraphicsTest
         private void DrawWall(Graphics g, int x, int halfWallHeight, int wallColour)
         {
             Rectangle wallRect = new Rectangle(x, SCREEN_CENTER_Y - halfWallHeight, DRAW_LINE_WIDTH, halfWallHeight * 2);
-
+            
             SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + KNOWN_COLOR_OFFSET));
             Pen wallPen = new Pen(wallBrush);
 
