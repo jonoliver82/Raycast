@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Windows.Forms;
-using System.Windows.Input;
 
 namespace GraphicsTest
 {
@@ -96,10 +94,6 @@ namespace GraphicsTest
                         {
                             _textureRects[idx++] = new Rectangle(rx * tw, ry * th, tw, th);
                         }
-
-
-
-
                     }
 
                     // extract texture pixel arrays for fast sampling
@@ -634,8 +628,6 @@ namespace GraphicsTest
                         break;
                     }
             }
-
-            // (minimap drawn during OnPaint) -- no drawing here
         }
 
         private void DrawMiniMap(Graphics g, List<Tuple<PointF, double>> hits)
@@ -703,37 +695,6 @@ namespace GraphicsTest
             {
                 g.FillEllipse(pb, px - pr, py - pr, pr * 2, pr * 2);
             }
-
-            // inset arc so it remains inside the edge rays
-            //float margin = 4f;
-            //float arcRadius = Math.Min(size / 2f - margin, scale * Math.Max(mapW, mapH));
-
-            //float playerDeg = (float)(_playerAngle * 180.0 / Math.PI);
-            //float fovDeg = (float)(_fov * 180.0 / Math.PI);
-            //float startAngle = -playerDeg - fovDeg / 2f;
-
-            //float arcX = px - arcRadius;
-            //float arcY = py - arcRadius;
-            //float arcW = arcRadius * 2f;
-            //float arcH = arcRadius * 2f;
-
-            //using (Brush arcBrush = new SolidBrush(Color.FromArgb(60, Color.Yellow)))
-            //using (Pen arcPen = new Pen(Color.Yellow))
-            //{
-            //    g.FillPie(arcBrush, arcX, arcY, arcW, arcH, startAngle, fovDeg);
-            //    g.DrawArc(arcPen, arcX, arcY, arcW, arcH, startAngle, fovDeg);
-            //}
-
-            //double leftAngle = _playerAngle - _fov / 2.0;
-            //double rightAngle = _playerAngle + _fov / 2.0;
-            //PointF leftPt = new PointF(px + (float)(Math.Cos(leftAngle) * arcRadius), py + (float)(Math.Sin(leftAngle) * arcRadius));
-            //PointF rightPt = new PointF(px + (float)(Math.Cos(rightAngle) * arcRadius), py + (float)(Math.Sin(rightAngle) * arcRadius));
-
-            //using (Pen rayPen = new Pen(Color.Yellow, 1))
-            //{
-            //    g.DrawLine(rayPen, px, py, leftPt.X, leftPt.Y);
-            //    g.DrawLine(rayPen, px, py, rightPt.X, rightPt.Y);
-            //}
 
             // draw individual ray hits (scaled to minimap) only up to their hit distance
             if (hits != null)
