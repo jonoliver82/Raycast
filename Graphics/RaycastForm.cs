@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Collections.Generic;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -9,288 +12,761 @@ namespace GraphicsTest
 {
     public partial class RaycastForm : Form
     {
-        // radians = degress * PI/180
-        private const int WORLD_BLOCK_SIZE = 10;
+        // Simple raycaster fields
+        private const double DEG_TO_RAD = Math.PI / 180.0;
+        private Bitmap _textureAtlas = null;
+        private Rectangle[] _textureRects = null;
+        private int _texCols = 0;
+        private int _texRows = 0;
+        private int[][] _texturePixels = null;
+        private int[] _textureWidths = null;
+        private int[] _textureHeights = null;
 
-        private const double RADIANS_CONVERSION_FACTOR = Math.PI / 180.0;
-        private const double PLAYER_START_X = 3.5 * WORLD_BLOCK_SIZE;
-        private const double PLAYER_START_Y = 3.5 * WORLD_BLOCK_SIZE;
-        private const int PLAYER_START_ANGLE_DEGREES = 90;
-        private const int FIELD_OF_VIEW_DEGREES = 60;
-        private const double PLAYER_STEP_AMOUNT = 2.0;
-        private const int PLAYER_ROTATE_DEGREES_AMOUNT = 5;
-        private const int KNOWN_COLOR_OFFSET = 30;
-        private const int SCREEN_WIDTH = 300;
-        private const int SCREEN_HEIGHT = 200;
-        private const int SCREEN_CENTER_Y = SCREEN_HEIGHT / 2;
-        private const int HALF_FIELD_OF_VIEW_DEGREES = FIELD_OF_VIEW_DEGREES / 2;
-        private const int DRAW_LINE_WIDTH = 1;
-        
-        private const int WORLD_SIZE_X = 10;
-        private const int WORLD_SIZE_Y = 10;
-
-        //As we are drawing lines of 5 pixels wide, our angle increment is 1
-        //If the lines where 1 pixel wide they would be 60/300 ie 0.2degrees
-        private const double ANGLE_INCREMENT_DEGREES = ((double)FIELD_OF_VIEW_DEGREES / (double)SCREEN_WIDTH) * (double)DRAW_LINE_WIDTH;
-
-        private double _playerX = PLAYER_START_X;
-        private double _playerY = PLAYER_START_Y;
-        private int _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
-
-        private Pen _floorPen = new Pen(new SolidBrush(Color.Gray), 1);
-        private Pen _ceilingPen = new Pen(new SolidBrush(Color.Black), 1);
-
-        private double[] _cosTable = new double[360];
-        private double[] _sinTable = new double[360];
-
-        // TODO precalculate COS and SIN Tables for 0...360 degrees in radians
-
-        //Each block is 10 x 10, so there are 100x100 for the whole map
-        //Player x,y of 15,15 is 1.5,1.5 in the world
-        //To convert player co-ordinate to world co-ordinate, divide by 10
-        //To convert world co-ordinate to player co-ordinate, multiply by 10
-        int[,] world = new int[WORLD_SIZE_X, WORLD_SIZE_Y]
+        private Bitmap _frameBufferBitmap = null;
+        private int[] _frameBufferPixels = null;
+        private readonly int[,] _map = new int[,]
         {
-            {1,9,1,9,1,9,1,9,1,9},
-            {9,0,0,0,0,0,0,0,0,1},
-            {1,0,0,0,0,0,0,4,0,9},
-            {9,0,1,0,0,0,5,0,0,1},
-            {1,0,2,0,0,4,0,0,0,9},
-            {9,0,3,0,0,0,0,0,0,1},
-            {1,0,0,0,0,7,8,0,0,9},
-            {9,0,5,0,0,8,7,0,0,1},
-            {1,0,6,0,0,0,0,0,0,9},
-            {9,1,9,1,9,1,9,1,9,1},        
+            // 0 = empty, other integers represent wall color indices
+            {1,1,1,1,1,1,1,1,1,1,1,1},
+            {1,0,0,0,0,0,0,0,0,0,0,1},
+            {1,0,2,0,0,0,0,3,0,0,0,1},
+            {1,0,0,0,0,0,0,0,0,4,0,1},
+            {1,0,0,0,5,0,0,0,0,0,0,1},
+            {1,0,0,0,0,0,6,0,0,0,0,1},
+            {1,0,0,7,0,0,0,0,8,0,0,1},
+            {1,0,0,0,0,0,0,0,0,0,0,1},
+            {1,0,0,0,0,9,0,0,0,0,0,1},
+            {1,0,0,0,0,0,0,0,0,0,0,1},
+            {1,0,0,0,0,0,0,0,0,0,0,1},
+            {1,1,1,1,1,1,1,1,1,1,1,1},
         };
-                             
+
+        private readonly Color[] _palette = new Color[]
+        {
+            Color.Black,       // 0 - unused (floor/ceiling)
+            Color.FromArgb(200,200,200), // 1 - light gray
+            Color.SaddleBrown, // 2
+            Color.DarkBlue,    // 3
+            Color.DarkOliveGreen, //4
+            Color.DarkRed,     //5
+            Color.Orange,      //6
+            Color.Purple,      //7
+            Color.Teal,        //8
+            Color.Yellow,      //9
+        };
+
+        private double _playerX = 3.5; // in map units
+        private double _playerY = 3.5;
+        private double _playerAngle = 0.0; // radians
+
+        private readonly double _fov = 60.0 * DEG_TO_RAD;
+        private readonly double _moveSpeed = 0.08; // map units per key press
+        private readonly double _rotSpeed = 5.0 * DEG_TO_RAD; // radians per key press
+        private readonly int _miniMapSize = 160; // pixels for square minimap
+        private Label _fpsLabel;
+        private Stopwatch _fpsStopwatch = new Stopwatch();
+        private int _fpsFrameCount = 0;
+        private double _currentFps = 0.0;
+        private bool _useBilinear = false; // toggleable
+
         public RaycastForm()
         {
             InitializeComponent();
+            DoubleBuffered = true;
+            KeyPreview = true;
+            Application.Idle += (s, e) => Invalidate();
 
-            // Initialize lookup tables
-            for (int i = 0; i < 360; i++)
+            // Try load texture atlas from executable folder named "textures.jpg"
+            try
             {
-                _cosTable[i] = Math.Cos(i * RADIANS_CONVERSION_FACTOR);
-                _sinTable[i] = Math.Sin(i * RADIANS_CONVERSION_FACTOR);
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textures.jpg");
+                if (System.IO.File.Exists(path))
+                {
+                    _textureAtlas = (Bitmap)Image.FromFile(path);
+                    // assume 4 columns by computed rows (common atlas layout)
+                    _texCols = 4;
+                    _texRows = Math.Max(1, (_textureAtlas.Height * _texCols) / _textureAtlas.Width);
+                    int tw = _textureAtlas.Width / _texCols;
+                    int th = _textureAtlas.Height / _texRows;
+                    _textureRects = new Rectangle[_texCols * _texRows + 1];
+                    int idx = 1;
+                    for (int ry = 0; ry < _texRows; ry++)
+                    {
+                        for (int rx = 0; rx < _texCols; rx++)
+                        {
+                            _textureRects[idx++] = new Rectangle(rx * tw, ry * th, tw, th);
+                        }
+
+
+
+
+                    }
+
+                    // extract texture pixel arrays for fast sampling
+                    _texturePixels = new int[_textureRects.Length][];
+                    _textureWidths = new int[_textureRects.Length];
+                    _textureHeights = new int[_textureRects.Length];
+                    for (int i = 1; i < _textureRects.Length; i++)
+                    {
+                        var r = _textureRects[i];
+                        _textureWidths[i] = r.Width;
+                        _textureHeights[i] = r.Height;
+                        _texturePixels[i] = new int[r.Width * r.Height];
+                        BitmapData bd = _textureAtlas.LockBits(r, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                        try
+                        {
+                            Marshal.Copy(bd.Scan0, _texturePixels[i], 0, r.Width * r.Height);
+                        }
+                        finally
+                        {
+                            _textureAtlas.UnlockBits(bd);
+                        }
+                    }
+
+                    // remove black border pixels from extracted textures (common atlas seam)
+                    RemoveBlackBordersFromTextures();
+                }
+            }
+            catch
+            {
+                // ignore loading errors and fall back to solid colors
+                _textureAtlas = null;
+                _textureRects = null;
+            }
+
+            // create fps label
+            _fpsLabel = new Label();
+            _fpsLabel.AutoSize = true;
+            _fpsLabel.ForeColor = Color.White;
+            _fpsLabel.BackColor = Color.FromArgb(160, 0, 0, 0);
+            _fpsLabel.Location = new Point(8, Math.Max(8, this.ClientSize.Height - 24));
+            _fpsLabel.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            _fpsLabel.Text = "FPS: 0";
+            Controls.Add(_fpsLabel);
+
+            _fpsStopwatch.Restart();
+
+            // create initial framebuffer
+            _frameBufferBitmap = new Bitmap(this.ClientSize.Width, this.ClientSize.Height, PixelFormat.Format32bppArgb);
+            _frameBufferPixels = new int[this.ClientSize.Width * this.ClientSize.Height];
+        }
+
+        private Color GetTextureRepresentativeColor(int texIndex)
+        {
+            if (texIndex <= 0 || _texturePixels == null || texIndex >= _texturePixels.Length) return Color.Magenta;
+            if (_textureWidths == null || _textureHeights == null) return Color.Magenta;
+
+            int w = _textureWidths[texIndex];
+            int h = _textureHeights[texIndex];
+            int[] pixels = _texturePixels[texIndex];
+
+            long rsum = 0, gsum = 0, bsum = 0, asum = 0;
+            int samples = 0;
+
+            // sample a small central grid (5x5) and ignore very dark pixels (likely borders)
+            int halfGrid = 2;
+            int cx = w / 2;
+            int cy = h / 2;
+            for (int oy = -halfGrid; oy <= halfGrid; oy++)
+            {
+                int sy = cy + oy;
+                if (sy < 0 || sy >= h) continue;
+                for (int ox = -halfGrid; ox <= halfGrid; ox++)
+                {
+                    int sx = cx + ox;
+                    if (sx < 0 || sx >= w) continue;
+                    int c = pixels[sy * w + sx];
+                    int a = (c >> 24) & 0xFF;
+                    int r = (c >> 16) & 0xFF;
+                    int g = (c >> 8) & 0xFF;
+                    int b = c & 0xFF;
+
+                    // skip nearly-black pixels (likely atlas separators)
+                    if (r + g + b < 30) continue;
+
+                    asum += a; rsum += r; gsum += g; bsum += b;
+                    samples++;
+                }
+            }
+
+            // fallback: if no good samples, sample the center pixel
+            if (samples == 0)
+            {
+                int c = pixels[cy * w + cx];
+                int a = (c >> 24) & 0xFF;
+                int r = (c >> 16) & 0xFF;
+                int g = (c >> 8) & 0xFF;
+                int b = c & 0xFF;
+                return Color.FromArgb(a, r, g, b);
+            }
+
+            int ar = (int)(rsum / samples);
+            int ag = (int)(gsum / samples);
+            int ab = (int)(bsum / samples);
+            int aa = (int)(asum / samples);
+            return Color.FromArgb(aa, ar, ag, ab);
+        }
+
+        private void RemoveBlackBordersFromTextures()
+        {
+            if (_texturePixels == null) return;
+            const int blackThreshold = 30; // sum of r+g+b below this is considered black
+            const double rowBlackFractionThreshold = 0.9; // fraction of pixels in row/col considered black
+
+            for (int t = 1; t < _texturePixels.Length; t++)
+            {
+                int w = _textureWidths[t];
+                int h = _textureHeights[t];
+                int[] px = _texturePixels[t];
+
+                // detect top
+                int top = 0;
+                for (int y = 0; y < h; y++)
+                {
+                    int blackCount = 0;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int c = px[y * w + x];
+                        int r = (c >> 16) & 0xFF;
+                        int g = (c >> 8) & 0xFF;
+                        int b = c & 0xFF;
+                        if (r + g + b < blackThreshold) blackCount++;
+                    }
+                    if ((double)blackCount / w >= rowBlackFractionThreshold) top++; else break;
+                }
+
+                // detect bottom
+                int bottom = 0;
+                for (int y = h - 1; y >= 0; y--)
+                {
+                    int blackCount = 0;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int c = px[y * w + x];
+                        int r = (c >> 16) & 0xFF;
+                        int g = (c >> 8) & 0xFF;
+                        int b = c & 0xFF;
+                        if (r + g + b < blackThreshold) blackCount++;
+                    }
+                    if ((double)blackCount / w >= rowBlackFractionThreshold) bottom++; else break;
+                }
+
+                // detect left
+                int left = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    int blackCount = 0;
+                    for (int y = 0; y < h; y++)
+                    {
+                        int c = px[y * w + x];
+                        int r = (c >> 16) & 0xFF;
+                        int g = (c >> 8) & 0xFF;
+                        int b = c & 0xFF;
+                        if (r + g + b < blackThreshold) blackCount++;
+                    }
+                    if ((double)blackCount / h >= rowBlackFractionThreshold) left++; else break;
+                }
+
+                // detect right
+                int right = 0;
+                for (int x = w - 1; x >= 0; x--)
+                {
+                    int blackCount = 0;
+                    for (int y = 0; y < h; y++)
+                    {
+                        int c = px[y * w + x];
+                        int r = (c >> 16) & 0xFF;
+                        int g = (c >> 8) & 0xFF;
+                        int b = c & 0xFF;
+                        if (r + g + b < blackThreshold) blackCount++;
+                    }
+                    if ((double)blackCount / h >= rowBlackFractionThreshold) right++; else break;
+                }
+
+                // clamp crop to reasonable bounds
+                int cropLeft = Math.Min(left, w - 1);
+                int cropRight = Math.Min(right, w - 1 - cropLeft);
+                int cropTop = Math.Min(top, h - 1);
+                int cropBottom = Math.Min(bottom, h - 1 - cropTop);
+
+                int newW = w - cropLeft - cropRight;
+                int newH = h - cropTop - cropBottom;
+                if (newW <= 0 || newH <= 0) continue;
+
+                if (cropLeft != 0 || cropRight != 0 || cropTop != 0 || cropBottom != 0)
+                {
+                    int[] newPx = new int[newW * newH];
+                    for (int yy = 0; yy < newH; yy++)
+                    {
+                        Array.Copy(px, (yy + cropTop) * w + cropLeft, newPx, yy * newW, newW);
+                    }
+                    _texturePixels[t] = newPx;
+                    _textureWidths[t] = newW;
+                    _textureHeights[t] = newH;
+                }
             }
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private int SampleTexture(int texIndex, double xf, double yf, bool bilinear)
         {
-            DoubleBuffered = true;
-            Application.Idle += Application_Idle;
+            int texW = _textureWidths[texIndex];
+            int texH = _textureHeights[texIndex];
+            var pixels = _texturePixels[texIndex];
+
+            if (!bilinear)
+            {
+                int xi = Math.Max(0, Math.Min(texW - 1, (int)xf));
+                int yi = Math.Max(0, Math.Min(texH - 1, (int)yf));
+                return pixels[yi * texW + xi];
+            }
+
+            // bilinear
+            int x0 = (int)Math.Floor(xf);
+            int y0 = (int)Math.Floor(yf);
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+
+            double sx = xf - x0;
+            double sy = yf - y0;
+
+            x0 = Clamp(x0, 0, texW - 1);
+            x1 = Clamp(x1, 0, texW - 1);
+            y0 = Clamp(y0, 0, texH - 1);
+            y1 = Clamp(y1, 0, texH - 1);
+
+            int c00 = pixels[y0 * texW + x0];
+            int c10 = pixels[y0 * texW + x1];
+            int c01 = pixels[y1 * texW + x0];
+            int c11 = pixels[y1 * texW + x1];
+
+            // interpolate channels
+            int a00 = (c00 >> 24) & 0xFF, r00 = (c00 >> 16) & 0xFF, g00 = (c00 >> 8) & 0xFF, b00 = c00 & 0xFF;
+            int a10 = (c10 >> 24) & 0xFF, r10 = (c10 >> 16) & 0xFF, g10 = (c10 >> 8) & 0xFF, b10 = c10 & 0xFF;
+            int a01 = (c01 >> 24) & 0xFF, r01 = (c01 >> 16) & 0xFF, g01 = (c01 >> 8) & 0xFF, b01 = c01 & 0xFF;
+            int a11 = (c11 >> 24) & 0xFF, r11 = (c11 >> 16) & 0xFF, g11 = (c11 >> 8) & 0xFF, b11 = c11 & 0xFF;
+
+            double a0 = a00 + (a10 - a00) * sx;
+            double a1 = a01 + (a11 - a01) * sx;
+            double a = a0 + (a1 - a0) * sy;
+
+            double r0 = r00 + (r10 - r00) * sx;
+            double r1 = r01 + (r11 - r01) * sx;
+            double r = r0 + (r1 - r0) * sy;
+
+            double g0 = g00 + (g10 - g00) * sx;
+            double g1 = g01 + (g11 - g01) * sx;
+            double gch = g0 + (g1 - g0) * sy;
+
+            double b0 = b00 + (b10 - b00) * sx;
+            double b1 = b01 + (b11 - b01) * sx;
+            double bch = b0 + (b1 - b0) * sy;
+
+            int ai = Clamp((int)(a + 0.5), 0, 255);
+            int ri = Clamp((int)(r + 0.5), 0, 255);
+            int gi = Clamp((int)(gch + 0.5), 0, 255);
+            int bi = Clamp((int)(bch + 0.5), 0, 255);
+
+            return (ai << 24) | (ri << 16) | (gi << 8) | bi;
         }
 
-        private void Application_Idle(object sender, EventArgs e)
+        private static int Clamp(int v, int lo, int hi)
         {
-            Invalidate();
+            if (v < lo) return lo;
+            if (v > hi) return hi;
+            return v;
         }
 
-        /// <summary>
-        /// Called everytime we invalidate the control
-        /// Render the scene based on the current position
-        /// </summary>
-        /// <param name="e"></param>
         protected override void OnPaint(PaintEventArgs e)
         {
-            ClearBackground(e.Graphics);
-            Raycast(e.Graphics);
-            DrawMap(e.Graphics);
-            DrawInfo();
-        }
+            base.OnPaint(e);
 
-        private void ClearBackground(Graphics g)
-        {
-            g.Clear(Color.White);
-        }
+            Graphics g = e.Graphics;
+            int screenW = ClientSize.Width;
+            int screenH = ClientSize.Height;
 
-        /// <summary>
-        /// Draws a map at the top left corner of the screen
-        /// </summary>
-        /// <param name="g"></param>
-        private void DrawMap(Graphics g)
-        {
-            // TODO draw a triangle to show FOV
-            Bitmap map = new Bitmap(WORLD_SIZE_X, WORLD_SIZE_Y);
-            Color pixelColor;
+            var miniMapHits = new List<Tuple<PointF, double>>();
 
-            for (int y = 0; y < WORLD_SIZE_Y; y++)
+            // ensure framebuffer size
+            if (_frameBufferBitmap == null || _frameBufferBitmap.Width != screenW || _frameBufferBitmap.Height != screenH)
             {
-                for (int x = 0; x < WORLD_SIZE_X; x++)
+                _frameBufferBitmap?.Dispose();
+                _frameBufferBitmap = new Bitmap(screenW, screenH, PixelFormat.Format32bppArgb);
+                _frameBufferPixels = new int[screenW * screenH];
+            }
+
+            // prepare ceiling/floor colors
+            int ceilingCol = Color.LightSkyBlue.ToArgb();
+            int floorCol = Color.DarkSlateGray.ToArgb();
+
+            // fill framebuffer with ceiling and floor
+            int halfH = screenH / 2;
+            for (int y = 0; y < screenH; y++)
+            {
+                int baseIndex = y * screenW;
+                int fillCol = (y < halfH) ? ceilingCol : floorCol;
+                for (int xx = 0; xx < screenW; xx++)
                 {
-                    //If floor, set to match floor color
-                    if (world[y, x] == 0)
+                    _frameBufferPixels[baseIndex + xx] = fillCol;
+                }
+            }
+
+            int mapWidth = _map.GetLength(1);
+            int mapHeight = _map.GetLength(0);
+
+            for (int x = 0; x < screenW; x++)
+            {
+                double cameraX = 2.0 * x / (double)screenW - 1.0;
+                double rayAngle = _playerAngle + Math.Atan(cameraX * Math.Tan(_fov / 2.0));
+                double rayDirX = Math.Cos(rayAngle);
+                double rayDirY = Math.Sin(rayAngle);
+
+                int mapX = (int)_playerX;
+                int mapY = (int)_playerY;
+
+                double sideDistX;
+                double sideDistY;
+                double deltaDistX = (rayDirX == 0) ? 1e30 : Math.Abs(1.0 / rayDirX);
+                double deltaDistY = (rayDirY == 0) ? 1e30 : Math.Abs(1.0 / rayDirY);
+                int stepX;
+                int stepY;
+
+                if (rayDirX < 0)
+                {
+                    stepX = -1;
+                    sideDistX = (_playerX - mapX) * deltaDistX;
+                }
+                else
+                {
+                    stepX = 1;
+                    sideDistX = (mapX + 1.0 - _playerX) * deltaDistX;
+                }
+                if (rayDirY < 0)
+                {
+                    stepY = -1;
+                    sideDistY = (_playerY - mapY) * deltaDistY;
+                }
+                else
+                {
+                    stepY = 1;
+                    sideDistY = (mapY + 1.0 - _playerY) * deltaDistY;
+                }
+
+                bool hit = false;
+                int side = 0;
+                int texIndex = 0;
+
+                while (!hit)
+                {
+                    if (sideDistX < sideDistY)
                     {
-                        pixelColor = Color.Gray;
+                        sideDistX += deltaDistX;
+                        mapX += stepX;
+                        side = 0;
                     }
                     else
                     {
-                        pixelColor = Color.FromKnownColor((KnownColor)world[y, x] + KNOWN_COLOR_OFFSET);
+                        sideDistY += deltaDistY;
+                        mapY += stepY;
+                        side = 1;
                     }
-                    
-                    map.SetPixel(x, y , pixelColor );
+
+                    if (mapX < 0 || mapY < 0 || mapX >= mapWidth || mapY >= mapHeight)
+                        break;
+
+                    texIndex = _map[mapY, mapX];
+                    if (texIndex != 0)
+                        hit = true;
+                }
+
+                if (!hit) continue;
+
+                double perpWallDist = (side == 0) ? (mapX - _playerX + (1 - stepX) / 2.0) / rayDirX
+                                                  : (mapY - _playerY + (1 - stepY) / 2.0) / rayDirY;
+
+                double hitX = _playerX + perpWallDist * rayDirX;
+                double hitY = _playerY + perpWallDist * rayDirY;
+                miniMapHits.Add(Tuple.Create(new PointF((float)hitX, (float)hitY), perpWallDist));
+
+                int lineHeight = (int)(screenH / perpWallDist);
+                if (lineHeight > screenH) lineHeight = screenH;
+                int drawStart = -lineHeight / 2 + screenH / 2;
+                if (drawStart < 0) drawStart = 0;
+                int drawEnd = lineHeight / 2 + screenH / 2;
+                if (drawEnd >= screenH) drawEnd = screenH - 1;
+
+                if (_texturePixels != null && texIndex > 0 && texIndex < _texturePixels.Length)
+                {
+                    int texW = _textureWidths[texIndex];
+                    int texH = _textureHeights[texIndex];
+                    // compute wallX
+                    double wallX = (side == 0) ? hitY - Math.Floor(hitY) : hitX - Math.Floor(hitX);
+                    double texXf = wallX * texW;
+                    if (side == 0 && rayDirX > 0) texXf = texW - texXf - 1.0;
+                    if (side == 1 && rayDirY < 0) texXf = texW - texXf - 1.0;
+                    int destHeight = drawEnd - drawStart + 1;
+                    if (destHeight <= 0) continue;
+
+                    for (int y = drawStart; y <= drawEnd; y++)
+                    {
+                        int d = y - drawStart;
+                        double texYf = (d * texH) / (double)destHeight;
+                        if (texYf < 0) texYf = 0;
+                        if (texYf > texH - 1) texYf = texH - 1;
+
+                        int color = SampleTexture(texIndex, texXf, texYf, _useBilinear);
+                        if (side == 1)
+                            color = DarkenArgb(color, 0.8f);
+
+                        _frameBufferPixels[y * screenW + x] = color;
+                    }
+                }
+                else
+                {
+                    Color col = _palette.Length > texIndex ? _palette[texIndex] : Color.Magenta;
+                    int colorInt = col.ToArgb();
+                    if (side == 1) colorInt = DarkenArgb(colorInt, 0.8f);
+                    for (int y = drawStart; y <= drawEnd; y++)
+                    {
+                        _frameBufferPixels[y * screenW + x] = colorInt;
+                    }
                 }
             }
 
-            //Mark the player position
-            int xx = (int)(_playerX / WORLD_BLOCK_SIZE);
-            int yy = (int)(_playerY / WORLD_BLOCK_SIZE);
-            map.SetPixel(xx, yy, Color.Red);
-
-            //Scale it up to 40 by 40 to make it easier to see
-            g.DrawImage(map,new Rectangle(0, 0, 40, 40));
-        }
-
-        private void Raycast(Graphics g)
-        {            
-            //As we loop from rayAngle to rayAngle plus FoV, we are "looking right"
-            for (double rayAngleDegrees = _playerFacingDegrees; rayAngleDegrees <= _playerFacingDegrees + FIELD_OF_VIEW_DEGREES; rayAngleDegrees += ANGLE_INCREMENT_DEGREES)
+            // copy framebuffer pixels to bitmap (handle stride)
+            BitmapData fbData = _frameBufferBitmap.LockBits(new Rectangle(0, 0, screenW, screenH), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
             {
-                double xIncrement = _cosTable[(int)(rayAngleDegrees % 360)] / 100; ////  Math.Cos((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
-                double yIncrement = _sinTable[(int)(rayAngleDegrees % 360)] / 100; //// Math.Sin((rayAngleDegrees % 360) * RADIANS_CONVERSION_FACTOR) / 100;
-
-                double testX = _playerX;
-                double testY = _playerY;
-                int rayLength = 1;
-                int wallColour = 0;
-
-                while (wallColour == 0)
+                int stride = fbData.Stride;
+                int bytesPerRow = screenW * 4;
+                IntPtr destPtr = fbData.Scan0;
+                if (stride == bytesPerRow)
                 {
-                    testX += xIncrement;
-                    testY += yIncrement;
-                    rayLength++;
-                    // Note conversion to int rounds down
-                    int worldX = (int)(testX / WORLD_BLOCK_SIZE);
-                    int worldY = (int)(testY / WORLD_BLOCK_SIZE);
-                    wallColour = world[worldX, worldY];
+                    Marshal.Copy(_frameBufferPixels, 0, destPtr, _frameBufferPixels.Length);
                 }
-
-                //Set start x for the rectangles
-                int x = (int)(((rayAngleDegrees - _playerFacingDegrees) * DRAW_LINE_WIDTH) / ANGLE_INCREMENT_DEGREES);
-
-                //Compensate for fisheye view as ray is cast from center, so apply a reduction of 
-                //half FoV to account for our main loop doing 0...60. Produces values -30 to 30
-                double beta = rayAngleDegrees - _playerFacingDegrees - HALF_FIELD_OF_VIEW_DEGREES;
-                // Cant use Cos Table here as using non integer range of values
-                rayLength = (int)((double)rayLength * Math.Cos(beta * RADIANS_CONVERSION_FACTOR));
-
-                //Scale the wall according to distance
-                //If the rayLength is shorter, then the wall must be drawn bigger
-                int wallHeight = (int)(((double)100000 / (double)rayLength) * 4);   
-                if (wallHeight > SCREEN_HEIGHT)
+                else
                 {
-                    wallHeight = SCREEN_HEIGHT;
+                    for (int y = 0; y < screenH; y++)
+                    {
+                        IntPtr rowPtr = IntPtr.Add(destPtr, y * stride);
+                        Marshal.Copy(_frameBufferPixels, y * screenW, rowPtr, screenW);
+                    }
                 }
-                int halfWallHeight = wallHeight / 2;
-                
-                DrawCeiling(g, x, halfWallHeight);
-                DrawWall(g, x, halfWallHeight, wallColour);
-                DrawFloor(g, x, halfWallHeight);
+            }
+            finally
+            {
+                _frameBufferBitmap.UnlockBits(fbData);
+            }
+
+            // draw framebuffer to screen
+            g.DrawImageUnscaled(_frameBufferBitmap, 0, 0);
+
+            // Draw minimap on top-left and show ray hits
+            DrawMiniMap(g, miniMapHits);
+
+            // FPS counting
+            _fpsFrameCount++;
+            var elapsed = _fpsStopwatch.Elapsed.TotalSeconds;
+            if (elapsed >= 1.0)
+            {
+                _currentFps = _fpsFrameCount / elapsed;
+                _fpsFrameCount = 0;
+                _fpsStopwatch.Restart();
+                _fpsLabel.Text = string.Format("FPS: {0:0}", _currentFps);
+                _fpsLabel.Location = new Point(8, this.ClientSize.Height - _fpsLabel.Height - 8);
             }
         }
 
-        private void DrawCeiling(Graphics g, int x, int halfWallHeight)
+        private int DarkenArgb(int colorInt, float v)
         {
-            Rectangle ceilingRect = new Rectangle(x, 0, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
+            int a = (colorInt >> 24) & 0xFF;
+            int r = (colorInt >> 16) & 0xFF;
+            int g = (colorInt >> 8) & 0xFF;
+            int b = colorInt & 0xFF;
 
-            g.DrawRectangle(_ceilingPen, ceilingRect);
-            g.FillRectangle(_ceilingPen.Brush, ceilingRect);
+            r = (int)(r * v);
+            g = (int)(g * v);
+            b = (int)(b * v);
+
+            if (r < 0) r = 0; if (r > 255) r = 255;
+            if (g < 0) g = 0; if (g > 255) g = 255;
+            if (b < 0) b = 0; if (b > 255) b = 255;
+
+            return (a << 24) | (r << 16) | (g << 8) | b;
         }
 
-        private void DrawWall(Graphics g, int x, int halfWallHeight, int wallColour)
+        protected override void OnKeyDown(KeyEventArgs e)
         {
-            Rectangle wallRect = new Rectangle(x, SCREEN_CENTER_Y - halfWallHeight, DRAW_LINE_WIDTH, halfWallHeight * 2);
-            
-            SolidBrush wallBrush = new SolidBrush(Color.FromKnownColor((KnownColor)wallColour + KNOWN_COLOR_OFFSET));
-            Pen wallPen = new Pen(wallBrush);
+            base.OnKeyDown(e);
 
-            g.DrawRectangle(wallPen, wallRect);
-            g.FillRectangle(wallBrush, wallRect);
-        }
-
-        private void DrawFloor(Graphics g, int x, int halfWallHeight)
-        {
-            Rectangle floorRect = new Rectangle(x, SCREEN_CENTER_Y + halfWallHeight, DRAW_LINE_WIDTH, SCREEN_CENTER_Y - halfWallHeight);
-
-            g.DrawRectangle(_floorPen, floorRect);
-            g.FillRectangle(_floorPen.Brush, floorRect);
-        }
-
-        private void DrawInfo()
-        {
-            infoLabel.Text = string.Format("Player X: {0} Y: {1} World X: {2} Y: {3} Facing: {4}",
-                _playerX.ToString("#0.00"),
-                _playerY.ToString("#0.00"),
-                (int)(_playerX / WORLD_BLOCK_SIZE),
-                (int)(_playerY / WORLD_BLOCK_SIZE),
-                _playerFacingDegrees.ToString());
-        }
-
-        /// <summary>
-        /// Move the player
-        /// See https://permadi.com/1996/05/ray-casting-tutorial-15/
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Form1_KeyDown(object sender, KeyEventArgs e)
-        {
             switch (e.KeyCode)
             {
-                case Keys.D:
-                case Keys.Right:
-                    {
-                        _playerFacingDegrees = (_playerFacingDegrees + PLAYER_ROTATE_DEGREES_AMOUNT) % 360;
-                        break;
-                    }
-                case Keys.A:
-                case Keys.Left:
-                    {
-                        _playerFacingDegrees = (_playerFacingDegrees + (360 - PLAYER_ROTATE_DEGREES_AMOUNT)) % 360;
-                        break;
-                    }
-                case Keys.W:
                 case Keys.Up:
+                case Keys.W:
                     {
-                        double newPlayerX = _playerX + (_cosTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
-                        double newPlayerY = _playerY + (_sinTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
-                        TryUpdatePlayerPosition(newPlayerX, newPlayerY);
+                        double nx = _playerX + Math.Cos(_playerAngle) * _moveSpeed;
+                        double ny = _playerY + Math.Sin(_playerAngle) * _moveSpeed;
+                        TryMove(nx, ny);
                         break;
                     }
-                case Keys.S:
                 case Keys.Down:
+                case Keys.S:
                     {
-                        double newPlayerX = _playerX - (_cosTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
-                        double newPlayerY = _playerY - (_sinTable[_playerFacingDegrees] * PLAYER_STEP_AMOUNT);
-                        TryUpdatePlayerPosition(newPlayerX, newPlayerY);
+                        double nx = _playerX - Math.Cos(_playerAngle) * _moveSpeed;
+                        double ny = _playerY - Math.Sin(_playerAngle) * _moveSpeed;
+                        TryMove(nx, ny);
                         break;
                     }
-                case Keys.R:
+                case Keys.Left:
+                case Keys.A:
                     {
-                        //Reset to start positions and angle
-                        _playerFacingDegrees = PLAYER_START_ANGLE_DEGREES;
-                        _playerX = PLAYER_START_X;
-                        _playerY = PLAYER_START_Y;
+                        _playerAngle -= _rotSpeed;
                         break;
                     }
-                default:
+                case Keys.B:
                     {
+                        _useBilinear = !_useBilinear;
+                        break;
+                    }
+                case Keys.Right:
+                case Keys.D:
+                    {
+                        _playerAngle += _rotSpeed;
                         break;
                     }
             }
+
+            // (minimap drawn during OnPaint) -- no drawing here
         }
 
-        /// <summary>
-        /// Check new position is not in a wall, if so then update player position
-        /// </summary>
-        /// <param name="x"></param>
-        /// <param name="y"></param>
-        private void TryUpdatePlayerPosition(double x, double y)
+        private void DrawMiniMap(Graphics g, List<Tuple<PointF, double>> hits)
         {
-            if (world[(int)(x / WORLD_BLOCK_SIZE), (int)(y / WORLD_BLOCK_SIZE)] == 0)
+            int mapW = _map.GetLength(1);
+            int mapH = _map.GetLength(0);
+            int size = _miniMapSize;
+            int pad = 0;
+            int left = pad;
+            int top = pad;
+
+            float scaleX = (size - pad * 2f) / mapW;
+            float scaleY = (size - pad * 2f) / mapH;
+            float scale = Math.Min(scaleX, scaleY);
+
+            using (Brush bg = new SolidBrush(Color.FromArgb(160, 0, 0, 0)))
+            using (Pen border = new Pen(Color.White))
             {
-                _playerX = x;
-                _playerY = y;
+                g.FillRectangle(bg, left - pad / 2, top - pad / 2, size, size);
+                g.DrawRectangle(border, left - pad / 2, top - pad / 2, size, size);
+            }
+
+            for (int my = 0; my < mapH; my++)
+            {
+                for (int mx = 0; mx < mapW; mx++)
+                {
+                    int cell = _map[my, mx];
+                    RectangleF r = new RectangleF(left + mx * scale, top + my * scale, scale, scale);
+                    if (cell == 0)
+                    {
+                        using (Brush floor = new SolidBrush(Color.FromArgb(80, Color.Gray)))
+                        {
+                            g.FillRectangle(floor, r);
+                        }
+                    }
+                    else
+                    {
+                        Color c;
+                        // prefer a representative color from the texture if available
+                        if (_texturePixels != null && cell > 0 && cell < _texturePixels.Length && _textureWidths != null)
+                        {
+                            c = GetTextureRepresentativeColor(cell);
+                        }
+                        else
+                        {
+                            c = _palette.Length > cell ? _palette[cell] : Color.Magenta;
+                        }
+                        using (Brush b = new SolidBrush(c))
+                        {
+                            g.FillRectangle(b, r);
+                        }
+                    }
+
+                    using (Pen p = new Pen(Color.FromArgb(40, Color.Black)))
+                    {
+                        g.DrawRectangle(p, r.X, r.Y, r.Width, r.Height);
+                    }
+                }
+            }
+
+            float px = left + (float)_playerX * scale;
+            float py = top + (float)_playerY * scale;
+            float pr = Math.Max(2.5f, scale * 0.25f);
+            using (Brush pb = new SolidBrush(Color.Red))
+            {
+                g.FillEllipse(pb, px - pr, py - pr, pr * 2, pr * 2);
+            }
+
+            // inset arc so it remains inside the edge rays
+            //float margin = 4f;
+            //float arcRadius = Math.Min(size / 2f - margin, scale * Math.Max(mapW, mapH));
+
+            //float playerDeg = (float)(_playerAngle * 180.0 / Math.PI);
+            //float fovDeg = (float)(_fov * 180.0 / Math.PI);
+            //float startAngle = -playerDeg - fovDeg / 2f;
+
+            //float arcX = px - arcRadius;
+            //float arcY = py - arcRadius;
+            //float arcW = arcRadius * 2f;
+            //float arcH = arcRadius * 2f;
+
+            //using (Brush arcBrush = new SolidBrush(Color.FromArgb(60, Color.Yellow)))
+            //using (Pen arcPen = new Pen(Color.Yellow))
+            //{
+            //    g.FillPie(arcBrush, arcX, arcY, arcW, arcH, startAngle, fovDeg);
+            //    g.DrawArc(arcPen, arcX, arcY, arcW, arcH, startAngle, fovDeg);
+            //}
+
+            //double leftAngle = _playerAngle - _fov / 2.0;
+            //double rightAngle = _playerAngle + _fov / 2.0;
+            //PointF leftPt = new PointF(px + (float)(Math.Cos(leftAngle) * arcRadius), py + (float)(Math.Sin(leftAngle) * arcRadius));
+            //PointF rightPt = new PointF(px + (float)(Math.Cos(rightAngle) * arcRadius), py + (float)(Math.Sin(rightAngle) * arcRadius));
+
+            //using (Pen rayPen = new Pen(Color.Yellow, 1))
+            //{
+            //    g.DrawLine(rayPen, px, py, leftPt.X, leftPt.Y);
+            //    g.DrawLine(rayPen, px, py, rightPt.X, rightPt.Y);
+            //}
+
+            // draw individual ray hits (scaled to minimap) only up to their hit distance
+            if (hits != null)
+            {
+                using (Pen hitPen = new Pen(Color.FromArgb(200, Color.Cyan), 1))
+                using (Brush hitBrush = new SolidBrush(Color.Cyan))
+                {
+                    foreach (var h in hits)
+                    {
+                        var pt = h.Item1;
+                        float hx = left + pt.X * scale;
+                        float hy = top + pt.Y * scale;
+
+                        // draw line from player to hit point
+                        g.DrawLine(hitPen, px, py, hx, hy);
+                        g.FillEllipse(hitBrush, hx - 2f, hy - 2f, 4f, 4f);
+                    }
+                }
+            }
+        }
+
+        private void TryMove(double nx, double ny)
+        {
+            int mapW = _map.GetLength(1);
+            int mapH = _map.GetLength(0);
+            int mx = (int)nx;
+            int my = (int)ny;
+            if (mx >= 0 && my >= 0 && mx < mapW && my < mapH && _map[my, mx] == 0)
+            {
+                _playerX = nx;
+                _playerY = ny;
             }
         }
     }
+
 }

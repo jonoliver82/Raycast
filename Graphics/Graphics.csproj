@@ -13,4 +13,10 @@
     <AssemblyName>GraphicsTest</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Update="textures.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
